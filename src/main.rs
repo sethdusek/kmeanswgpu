@@ -11,6 +11,7 @@ use winit::{
     window::{Window, WindowAttributes},
 };
 
+mod init;
 mod renderer;
 
 const K: u32 = 10;
@@ -103,6 +104,10 @@ impl<'a> ApplicationHandler for App<'a> {
 }
 
 fn main() -> anyhow::Result<()> {
+    // rayon::ThreadPoolBuilder::new()
+    //     .num_threads(8)
+    //     .build_global()
+    //     .unwrap();
     let (image, k) = get_args()?;
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);

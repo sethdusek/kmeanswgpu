@@ -16,7 +16,7 @@ var<uniform> mouse_state: MouseState;
 
 
 @compute
-@workgroup_size(1, 1, 1)
+@workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let load: u32 = textureLoad(assignment, global_id.xy).x;
     let centroid = centroids[load];

@@ -2,11 +2,10 @@ use core::f32;
 use std::{collections::HashMap, sync::Arc};
 
 use image::EncodableLayout;
-use rand::{Rng, rng};
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
-use crate::Image;
+use crate::{Image, init::InitializationMethod};
 
 // uniform state for composite shader, see equivalent definition in shaders/composite.wgsl
 #[derive(bytemuck::Pod, bytemuck::Zeroable, Copy, Clone, PartialEq)]
@@ -132,7 +131,14 @@ impl<'a> Renderer<'a> {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let k_means_state = KmeansState::new(&device, image, image_texture.clone(), k)?;
+        let k_means_state = KmeansState::new(
+            &device,
+            image,
+            image_texture.clone(),
+            k,
+            InitializationMethod::Kmeanspp,
+        )?;
+
         let composite_bindgroup_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: None,
@@ -219,7 +225,7 @@ impl<'a> Renderer<'a> {
             push_constant_ranges: &[],
         });
         let composite_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("Assignment pipeline"),
+            label: Some("Composite pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader_module,
             entry_point: Some("main"),
@@ -258,7 +264,7 @@ impl<'a> Renderer<'a> {
         );
     }
 
-    // Queue image upload
+    // Create image texture from `buf`, and queue write from buf to texture
     fn upload_image(device: &wgpu::Device, queue: &wgpu::Queue, buf: &Image) -> wgpu::Texture {
         let size = wgpu::Extent3d {
             width: buf.width(),
@@ -342,8 +348,8 @@ impl<'a> Renderer<'a> {
             composite_pass.set_pipeline(&self.composite_pipeline);
             composite_pass.set_bind_group(0, &self.composite_bindgroup, &[]);
             composite_pass.dispatch_workgroups(
-                self.image_texture.width(),
-                self.image_texture.height(),
+                self.image_texture.width().div_ceil(8),
+                self.image_texture.height().div_ceil(8),
                 1,
             );
         }
@@ -384,8 +390,10 @@ struct KmeansState {
     assignment_bind_groups: [wgpu::BindGroup; 2],
     phase2_pipeline: wgpu::ComputePipeline,
     convergence_tracker: wgpu::Buffer,
+    // Staging buffer to copy oout results from convergence tracker. wgpu doesn't let us read from convergence_tracker directly so we need to copy convergence to staging and then read from CPU
     staging: wgpu::Buffer,
     k: u32,
+    initialization_method: InitializationMethod,
 }
 
 impl KmeansState {
@@ -408,7 +416,7 @@ impl KmeansState {
             entry_point: Some("phase2"),
             compilation_options: wgpu::PipelineCompilationOptions {
                 constants: pipeline_constants,
-                zero_initialize_workgroup_memory: false, // TODO
+                zero_initialize_workgroup_memory: false,
             },
             cache: None,
         })
@@ -419,6 +427,7 @@ impl KmeansState {
         input_image_buf: Image,
         input_image: wgpu::Texture,
         k: u32,
+        initialization_method: InitializationMethod,
     ) -> anyhow::Result<Self> {
         let centroid_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Centroids Buffer 1"),
@@ -611,6 +620,7 @@ impl KmeansState {
             convergence_tracker,
             staging,
             k,
+            initialization_method,
         })
     }
 
@@ -629,15 +639,16 @@ impl KmeansState {
     fn run(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         let start = std::time::Instant::now();
         let zeros = vec![0; self.count_buf.size() as usize];
-        let mut centroid_buf = vec![[0u64; 4]; self.k as usize];
+        let pp_start = std::time::Instant::now();
+        let centroid_buf = self
+            .initialization_method
+            .initialize(&self.input_image_buf, self.k)
+            .into_iter()
+            .map(|pix| pix.map(|b| b as u64))
+            .collect::<Vec<_>>();
+        println!("initialized in {:?}", pp_start.elapsed());
         queue.write_buffer(&self.centroids[1], 0, bytemuck::cast_slice(&centroid_buf));
-        centroid_buf.iter_mut().for_each(|c| {
-            let pixel = self.input_image_buf.get_pixel(
-                rng().random_range(0..self.input_image_buf.width()),
-                rng().random_range(0..self.input_image_buf.height()),
-            );
-            *c = pixel.0.map(|v| v as u64);
-        });
+
         queue.write_buffer(&self.centroids[0], 0, bytemuck::cast_slice(&centroid_buf));
         queue.write_buffer(&self.count_buf, 0, &zeros);
 

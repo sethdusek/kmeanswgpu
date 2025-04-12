@@ -9,8 +9,13 @@ bytemuck = "1.22.0"
 image = "0.25.6"
 pollster = "0.4.0"
 rand = "0.9.0"
+rand_distr = "0.5.1"
+rayon = "1.10.0"
 wgpu = "24.0.3"
 winit = "0.30.9"
 
 [profile.dev]
 incremental = true
+
+[profile.release]
+debug = true
