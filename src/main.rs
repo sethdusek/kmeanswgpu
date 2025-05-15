@@ -1,8 +1,10 @@
+#![feature(portable_simd, slice_as_chunks)]
 use std::sync::Arc;
 
 use image::{ImageBuffer, ImageReader, Rgba};
+use kmeanswgpu::Image;
+use kmeanswgpu::renderer::Renderer;
 use pollster::FutureExt;
-use renderer::Renderer;
 use winit::{
     application::ApplicationHandler,
     dpi::Size,
@@ -10,9 +12,6 @@ use winit::{
     event_loop::EventLoop,
     window::{Window, WindowAttributes},
 };
-
-mod init;
-mod renderer;
 
 const K: u32 = 10;
 fn get_args() -> anyhow::Result<(Image, u32)> {
@@ -26,8 +25,6 @@ fn get_args() -> anyhow::Result<(Image, u32)> {
         .unwrap_or(K);
     Ok((image, k))
 }
-
-pub type Image = ImageBuffer<Rgba<u8>, Vec<u8>>;
 
 struct App<'a> {
     image: Image,
@@ -104,10 +101,6 @@ impl<'a> ApplicationHandler for App<'a> {
 }
 
 fn main() -> anyhow::Result<()> {
-    // rayon::ThreadPoolBuilder::new()
-    //     .num_threads(8)
-    //     .build_global()
-    //     .unwrap();
     let (image, k) = get_args()?;
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);

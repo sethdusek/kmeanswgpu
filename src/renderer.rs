@@ -5,7 +5,8 @@ use image::EncodableLayout;
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
-use crate::{Image, init::InitializationMethod};
+use crate::Image;
+use crate::init::InitializationMethod;
 
 // uniform state for composite shader, see equivalent definition in shaders/composite.wgsl
 #[derive(bytemuck::Pod, bytemuck::Zeroable, Copy, Clone, PartialEq)]
@@ -648,7 +649,6 @@ impl KmeansState {
             .collect::<Vec<_>>();
         println!("initialized in {:?}", pp_start.elapsed());
         queue.write_buffer(&self.centroids[1], 0, bytemuck::cast_slice(&centroid_buf));
-
         queue.write_buffer(&self.centroids[0], 0, bytemuck::cast_slice(&centroid_buf));
         queue.write_buffer(&self.count_buf, 0, &zeros);
 

@@ -118,9 +118,7 @@ pub fn kmeans_pp(image: &Image, k: u32) -> Vec<[u8; 4]> {
                     .unwrap()
             })
             .collect_into_vec(&mut weights);
-        let now = std::time::Instant::now();
         distr.update(&weights);
-        println!("{} {:?}", weights.len(), now.elapsed());
         let idx = distr.sample(&mut rng) as u32;
         centroids.push(image.get_pixel(idx % image.width(), idx / image.width()).0);
         weights.clear();
