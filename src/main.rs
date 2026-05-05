@@ -1,7 +1,6 @@
-#![feature(portable_simd, slice_as_chunks)]
 use std::sync::Arc;
 
-use image::{ImageBuffer, ImageReader, Rgba};
+use image::ImageReader;
 use kmeanswgpu::Image;
 use kmeanswgpu::renderer::Renderer;
 use pollster::FutureExt;

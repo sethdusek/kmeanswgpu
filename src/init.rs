@@ -1,8 +1,7 @@
 //! Initialization methods for k-means (Forgy, K-means++)
-use std::hint::unreachable_unchecked;
 
 use rand::{Rng, rng};
-use rand_distr::{Distribution, Uniform, weighted::Weight};
+use rand_distr::{Distribution, Uniform};
 use rayon::prelude::*;
 
 use crate::Image;
@@ -66,15 +65,13 @@ impl WeightedDistr {
         let mut total_weight = new_weights[0];
         for w in &new_weights[1..] {
             // safety: weights_prefix.capacity() == new_weights.len() - 1
-            if weights_prefix.capacity() > weights_prefix.len() {
-                weights_prefix.push(total_weight);
-            } else {
-                // safety: weights_prefix.capacity() == new_weights.len() - 1, so it never goes in this else branch
-                // why add a branch that does nothing? for some reason rustc doesn't see the above invariant holds \
-                // and adds a branch checking for spare capacity each iteration, this branch lets it "see" that this is always true
-                // makes loop over twice as fast (4.2 billion elements/second), yay
-                unsafe { unreachable_unchecked() }
+            // for some reason rustc doesn't see the above invariant holds \
+            // and adds a branch checking for spare capacity each iteration, this assert lets it "see" that this is always true
+            // makes loop over twice as fast (4.2 billion elements/second), yay
+            unsafe {
+                std::hint::assert_unchecked(weights_prefix.capacity() > weights_prefix.len());
             }
+            weights_prefix.push(total_weight);
 
             // safety: rand uses checked addition, but we don't need it here (for performance)
             // some quick math: the maximum distance two u8x4 vectors can have is 255.pow(2) * 4 = 260,100

@@ -134,6 +134,7 @@ impl<'a> Renderer<'a> {
 
         let k_means_state = KmeansState::new(
             &device,
+            &queue,
             image,
             image_texture.clone(),
             k,
@@ -252,6 +253,7 @@ impl<'a> Renderer<'a> {
         self.mouse_state.set_mouse_pos(x, y);
         self.upload_mouse_state();
     }
+
     pub fn mouse_clicked(&mut self, down: bool) {
         self.mouse_state.set_mouse_state(down);
         self.upload_mouse_state();
@@ -311,7 +313,7 @@ impl<'a> Renderer<'a> {
                 });
         if !self.k_means_done {
             self.k_means_done = true;
-            self.k_means_state.run(&self.device, &self.queue)
+            self.k_means_state.run()
         }
         let cur_texture = self.surface.get_current_texture()?;
         let _ = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -374,6 +376,7 @@ impl<'a> Renderer<'a> {
                 depth_or_array_layers: 1,
             },
         );
+
         self.queue.submit([command_encoder.finish()]);
         cur_texture.present();
         Ok(())
@@ -381,6 +384,8 @@ impl<'a> Renderer<'a> {
 }
 
 struct KmeansState {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
     // input image
     input_image_buf: Image,
     image_texture: wgpu::Texture,
@@ -391,7 +396,7 @@ struct KmeansState {
     assignment_bind_groups: [wgpu::BindGroup; 2],
     phase2_pipeline: wgpu::ComputePipeline,
     convergence_tracker: wgpu::Buffer,
-    // Staging buffer to copy oout results from convergence tracker. wgpu doesn't let us read from convergence_tracker directly so we need to copy convergence to staging and then read from CPU
+    // Staging buffer to copy out results from convergence tracker. wgpu doesn't let us read from convergence_tracker directly so we need to copy convergence to staging and then read from CPU
     staging: wgpu::Buffer,
     k: u32,
     initialization_method: InitializationMethod,
@@ -425,6 +430,7 @@ impl KmeansState {
 
     fn new(
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         input_image_buf: Image,
         input_image: wgpu::Texture,
         k: u32,
@@ -606,6 +612,8 @@ impl KmeansState {
             create_bind_group(&centroid_buf2, &centroid_buf),
         ];
         Ok(Self {
+            device: device.clone(),
+            queue: queue.clone(),
             input_image_buf,
             image_texture: input_image,
             assignment_texture,
@@ -625,11 +633,11 @@ impl KmeansState {
         })
     }
 
-    fn is_converged(&self, device: &wgpu::Device) -> bool {
+    fn is_converged(&self) -> bool {
         let (tx, rx) = std::sync::mpsc::channel();
         let slice = self.staging.slice(..);
         slice.map_async(wgpu::MapMode::Read, move |r| tx.send(r).unwrap());
-        device.poll(wgpu::Maintain::wait());
+        self.device.poll(wgpu::Maintain::wait());
         rx.recv().unwrap().unwrap();
         assert!(slice.get_mapped_range().len() == size_of::<u32>());
         let not_converged = u32::from_be_bytes(slice.get_mapped_range()[..].try_into().unwrap());
@@ -637,7 +645,7 @@ impl KmeansState {
         not_converged == 0
     }
 
-    fn run(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+    fn run(&mut self) {
         let start = std::time::Instant::now();
         let zeros = vec![0; self.count_buf.size() as usize];
         let pp_start = std::time::Instant::now();
@@ -648,15 +656,19 @@ impl KmeansState {
             .map(|pix| pix.map(|b| b as u64))
             .collect::<Vec<_>>();
         println!("initialized in {:?}", pp_start.elapsed());
-        queue.write_buffer(&self.centroids[1], 0, bytemuck::cast_slice(&centroid_buf));
-        queue.write_buffer(&self.centroids[0], 0, bytemuck::cast_slice(&centroid_buf));
-        queue.write_buffer(&self.count_buf, 0, &zeros);
+        self.queue
+            .write_buffer(&self.centroids[1], 0, bytemuck::cast_slice(&centroid_buf));
+        self.queue
+            .write_buffer(&self.centroids[0], 0, bytemuck::cast_slice(&centroid_buf));
+        self.queue.write_buffer(&self.count_buf, 0, &zeros);
 
         for i in 0.. {
             {
-                queue.write_buffer(&self.convergence_tracker, 0, &zeros[0..size_of::<u32>()]);
-                let mut encoder =
-                    device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+                self.queue
+                    .write_buffer(&self.convergence_tracker, 0, &zeros[0..size_of::<u32>()]);
+                let mut encoder = self
+                    .device
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
                 {
                     let mut compute_pass =
                         encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -682,9 +694,9 @@ impl KmeansState {
                     std::mem::size_of::<u32>() as u64,
                 );
 
-                queue.submit([encoder.finish()]);
+                self.queue.submit([encoder.finish()]);
                 // i % 2 is a temporary hack since the composite pipeline only reads from the first centroid buffer
-                if self.is_converged(device) && i % 2 == 0 {
+                if self.is_converged() && i % 2 == 0 {
                     println!("Converged after {i} iterations");
                     break;
                 }
