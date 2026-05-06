@@ -24,7 +24,9 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                 f32(centroid[1]) / 255.0,
                 f32(centroid[2]) / 255.0,
                 );
-    let mouse_position_cluster = textureLoad(assignment, vec2<u32>(u32(mouse_state.x), u32(mouse_state.y))).x;
+    let texture_dimensions = textureDimensions(assignment);
+    let mouse_position = vec2<u32>(u32(mouse_state.x * f32(texture_dimensions.x)), u32(mouse_state.y * f32(texture_dimensions.y)));
+    let mouse_position_cluster = textureLoad(assignment, mouse_position).x;
     if mouse_state.mouse_down != 0 && load != mouse_position_cluster {
         color*=0.7;
     }

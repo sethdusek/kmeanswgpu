@@ -36,6 +36,7 @@ impl MouseState {
 }
 
 pub struct Renderer<'a> {
+    window: Arc<Window>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface: wgpu::Surface<'a>,
@@ -57,7 +58,7 @@ impl<'a> Renderer<'a> {
             flags: wgpu::InstanceFlags::from_build_config(),
             ..Default::default()
         });
-        let surface = instance.create_surface(window)?;
+        let surface = instance.create_surface(window.clone())?;
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
@@ -235,6 +236,7 @@ impl<'a> Renderer<'a> {
             cache: None,
         });
         Ok(Self {
+            window,
             device,
             queue,
             surface,
@@ -250,7 +252,10 @@ impl<'a> Renderer<'a> {
     }
 
     pub fn update_mouse_position(&mut self, x: f32, y: f32) {
-        self.mouse_state.set_mouse_pos(x, y);
+        self.mouse_state.set_mouse_pos(
+            x / self.window.inner_size().width as f32,
+            y / self.window.inner_size().height as f32,
+        );
         self.upload_mouse_state();
     }
 
